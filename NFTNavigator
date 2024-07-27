@@ -1,0 +1,103 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+class NFTNavigator:
+    def __init__(self, opensea_api_url: str = 'https://api.opensea.io/api/v1'):
+        self.api_url = opensea_api_url
+
+    # OpenSea methods
+    def get_nft_metadata(self, asset_contract_address: str, token_id: str) -> dict:
+        url = f"{self.api_url}/assets"
+        params = {
+            'asset_contract_address': asset_contract_address,
+            'token_ids': token_id,
+        }
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if data['assets']:
+                return data['assets'][0]
+            else:
+                return {"error": "NFT not found"}
+        else:
+            return {"error": "Failed to fetch data"}
+
+    def get_nft_price_data(self, asset_contract_address: str, token_id: str) -> pd.DataFrame:
+        url = f"{self.api_url}/assets"
+        params = {
+            'asset_contract_address': asset_contract_address,
+            'token_ids': token_id,
+            'order_direction': 'desc',
+            'offset': '0',
+            'limit': '1'
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+
+        if data['assets']:
+            asset = data['assets'][0]
+            prices = asset.get('last_sale', {}).get('total_price', 0)
+            timestamps = [datetime.strptime(asset.get('last_sale', {}).get('created_date', ''), '%Y-%m-%dT%H:%M:%S.%fZ')]
+            df = pd.DataFrame({
+                'timestamp': timestamps,
+                'price': [float(prices)/1e18]  # Assuming price is in wei, convert to ether
+            })
+            return df
+        else:
+            return pd.DataFrame(columns=['timestamp', 'price'])
+
+    def plot_nft_price_data(self, asset_contract_address: str, token_id: str):
+        df = self.get_nft_price_data(asset_contract_address, token_id)
+        if df.empty:
+            print("No price data available for this NFT.")
+            return
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(df['timestamp'], df['price'])
+        plt.title(f'Price Data for NFT (Token ID: {token_id})')
+        plt.xlabel('Date')
+        plt.ylabel('Price (ETH)')
+        plt.grid(True)
+        plt.show()
+
+    # Managing NFT collections
+    def get_nft_collection_data(self, collection_slug: str) -> dict:
+        url = f"{self.api_url}/collections"
+        params = {'slug': collection_slug}
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": "Failed to fetch collection data"}
+
+    def analyze_nft_collection(self, collection_slug: str):
+        data = self.get_nft_collection_data(collection_slug)
+        if 'error' in data:
+            print(data['error'])
+            return
+
+        # Example analysis: Print collection details
+        collection = data[0] if data else {}
+        print(f"Collection Name: {collection.get('name', 'N/A')}")
+        print(f"Description: {collection.get('description', 'N/A')}")
+        print(f"Total NFTs: {collection.get('stats', {}).get('count', 'N/A')}")
+        print(f"Total Volume Traded: {collection.get('stats', {}).get('total_volume', 'N/A')} ETH")
+
+# Example Usage
+if __name__ == "__main__":
+    nft_navigator = NFTNavigator()
+
+    # Fetch NFT Metadata
+    asset_contract_address = '0x60f80127a8178fc593b2e9d58a01256c7b5d6f3e'  # Example contract address
+    token_id = '1'  # Example token ID
+    nft_metadata = nft_navigator.get_nft_metadata(asset_contract_address, token_id)
+    print("NFT Metadata:", nft_metadata)
+
+    # Fetch and Plot NFT Price Data
+    nft_navigator.plot_nft_price_data(asset_contract_address, token_id)
+
+    # Analyze NFT Collection
+    collection_slug = 'boredapeyachtclub'
+    nft_navigator.analyze_nft_collection(collection_slug)
